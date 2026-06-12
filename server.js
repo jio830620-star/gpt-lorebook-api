@@ -7,8 +7,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const LOREBOOK_PATH = "./lorebook.json";
-const STATE_PATH = "./state.json";
+function getLorebookPath(campaign) {
+  return `./lorebooks/${campaign}.json`;
+}
+
+function getStatePath(campaign) {
+  return `./lorebooks/${campaign}_state.json`;
+}
 
 function readJson(path, fallback) {
   try {
@@ -31,20 +36,27 @@ app.get("/", (req, res) => {
 });
 
 app.post("/search-lore", (req, res) => {
-  const query = req.body.query || "";
-  const lorebook = readJson(LOREBOOK_PATH, []);
+  const { campaign, query } = req.body;
+
+  const lorebook = readJson(
+    getLorebookPath(campaign || "default"),
+    []
+  );
 
   const results = lorebook.filter(entry =>
-    entry.keys?.some(key => query.includes(key))
+    entry.keys?.some(key => query?.includes(key))
   );
 
   res.json({ results });
 });
 
 app.post("/save-state", (req, res) => {
-  const { state } = req.body;
+  const { campaign, state } = req.body;
 
-  const states = readJson(STATE_PATH, []);
+  const states = readJson(
+    getStatePath(campaign || "default"),
+    []
+  );
 
   const saved = {
     time: new Date().toISOString(),
@@ -52,7 +64,11 @@ app.post("/save-state", (req, res) => {
   };
 
   states.push(saved);
-  writeJson(STATE_PATH, states);
+
+  writeJson(
+    getStatePath(campaign || "default"),
+    states
+  );
 
   res.json({
     success: true,
@@ -61,9 +77,17 @@ app.post("/save-state", (req, res) => {
 });
 
 app.post("/add-lore", (req, res) => {
-  const { name, keys, content } = req.body;
+  const {
+    campaign,
+    name,
+    keys,
+    content
+  } = req.body;
 
-  const lorebook = readJson(LOREBOOK_PATH, []);
+  const lorebook = readJson(
+    getLorebookPath(campaign || "default"),
+    []
+  );
 
   const newEntry = {
     name,
@@ -72,7 +96,11 @@ app.post("/add-lore", (req, res) => {
   };
 
   lorebook.push(newEntry);
-  writeJson(LOREBOOK_PATH, lorebook);
+
+  writeJson(
+    getLorebookPath(campaign || "default"),
+    lorebook
+  );
 
   res.json({
     success: true,
@@ -81,16 +109,35 @@ app.post("/add-lore", (req, res) => {
 });
 
 app.post("/update-lore", (req, res) => {
-  const { name, keys, content } = req.body;
+  const {
+    campaign,
+    name,
+    keys,
+    content
+  } = req.body;
 
-  const lorebook = readJson(LOREBOOK_PATH, []);
+  const lorebook = readJson(
+    getLorebookPath(campaign || "default"),
+    []
+  );
 
-  const index = lorebook.findIndex(entry => entry.name === name);
+  const index = lorebook.findIndex(
+    entry => entry.name === name
+  );
 
   if (index === -1) {
-    const newEntry = { name, keys, content };
+    const newEntry = {
+      name,
+      keys,
+      content
+    };
+
     lorebook.push(newEntry);
-    writeJson(LOREBOOK_PATH, lorebook);
+
+    writeJson(
+      getLorebookPath(campaign || "default"),
+      lorebook
+    );
 
     return res.json({
       success: true,
@@ -105,7 +152,10 @@ app.post("/update-lore", (req, res) => {
     content: content || lorebook[index].content
   };
 
-  writeJson(LOREBOOK_PATH, lorebook);
+  writeJson(
+    getLorebookPath(campaign || "default"),
+    lorebook
+  );
 
   res.json({
     success: true,
@@ -114,4 +164,6 @@ app.post("/update-lore", (req, res) => {
   });
 });
 
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Lorebook API running");
+});
