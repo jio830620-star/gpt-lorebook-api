@@ -43,9 +43,22 @@ app.post("/search-lore", (req, res) => {
     []
   );
 
-  const results = lorebook.filter(entry =>
-    entry.keys?.some(key => query?.includes(key))
+const q = (query || "").toLowerCase();
+
+const results = lorebook.filter(entry => {
+  const name = (entry.name || "").toLowerCase();
+  const content = (entry.content || "").toLowerCase();
+  const keys = entry.keys || [];
+
+  return (
+    name.includes(q) ||
+    content.includes(q) ||
+    keys.some(key => {
+      const k = String(key).toLowerCase();
+      return q.includes(k) || k.includes(q);
+    })
   );
+});
 
   res.json({ results });
 });
