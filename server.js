@@ -43,22 +43,22 @@ app.post("/search-lore", (req, res) => {
     []
   );
 
-const q = (query || "").toLowerCase();
+  const q = (query || "").toLowerCase();
 
-const results = lorebook.filter(entry => {
-  const name = (entry.name || "").toLowerCase();
-  const content = (entry.content || "").toLowerCase();
-  const keys = entry.keys || [];
+  const results = lorebook.filter(entry => {
+    const name = (entry.name || "").toLowerCase();
+    const content = (entry.content || "").toLowerCase();
+    const keys = entry.keys || [];
 
-  return (
-    name.includes(q) ||
-    content.includes(q) ||
-    keys.some(key => {
-      const k = String(key).toLowerCase();
-      return q.includes(k) || k.includes(q);
-    })
-  );
-});
+    return (
+      name.includes(q) ||
+      content.includes(q) ||
+      keys.some(key => {
+        const k = String(key).toLowerCase();
+        return q.includes(k) || k.includes(q);
+      })
+    );
+  });
 
   res.json({ results });
 });
@@ -174,6 +174,38 @@ app.post("/update-lore", (req, res) => {
     success: true,
     mode: "updated",
     entry: lorebook[index]
+  });
+});
+
+/* ===== 관리자 페이지 ===== */
+
+app.get("/admin/lorebook/:campaign", (req, res) => {
+  const campaign = req.params.campaign;
+
+  const lorebook = readJson(
+    getLorebookPath(campaign),
+    []
+  );
+
+  res.json({
+    campaign,
+    count: lorebook.length,
+    entries: lorebook
+  });
+});
+
+app.get("/admin/state/:campaign", (req, res) => {
+  const campaign = req.params.campaign;
+
+  const states = readJson(
+    getStatePath(campaign),
+    []
+  );
+
+  res.json({
+    campaign,
+    count: states.length,
+    states
   });
 });
 
