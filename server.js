@@ -19,13 +19,33 @@ function readJson(path, fallback) {
   try {
     if (!fs.existsSync(path)) return fallback;
     return JSON.parse(fs.readFileSync(path, "utf8"));
-  } catch {
+  } catch (err) {
+    console.error("JSON READ ERROR:", err);
     return fallback;
   }
 }
 
 function writeJson(path, data) {
-  fs.writeFileSync(path, JSON.stringify(data, null, 2), "utf8");
+  fs.writeFileSync(
+    path,
+    JSON.stringify(data, null, 2),
+    "utf8"
+  );
+}
+
+function backupLorebook(path) {
+  try {
+    if (!fs.existsSync(path)) return;
+
+    fs.copyFileSync(
+      path,
+      `${path}.bak`
+    );
+
+    console.log("BACKUP CREATED:", `${path}.bak`);
+  } catch (err) {
+    console.error("BACKUP ERROR:", err);
+  }
 }
 
 app.get("/", (req, res) => {
@@ -97,10 +117,13 @@ app.post("/add-lore", (req, res) => {
     content
   } = req.body;
 
-  const lorebook = readJson(
-    getLorebookPath(campaign || "default"),
-    []
+  const path = getLorebookPath(
+    campaign || "default"
   );
+
+  const lorebook = readJson(path, []);
+
+  backupLorebook(path);
 
   const newEntry = {
     name,
@@ -110,10 +133,7 @@ app.post("/add-lore", (req, res) => {
 
   lorebook.push(newEntry);
 
-  writeJson(
-    getLorebookPath(campaign || "default"),
-    lorebook
-  );
+  writeJson(path, lorebook);
 
   res.json({
     success: true,
@@ -129,46 +149,50 @@ app.post("/update-lore", (req, res) => {
     content
   } = req.body;
 
-  const lorebook = readJson(
-    getLorebookPath(campaign || "default"),
-    []
+  const path = getLorebookPath(
+    campaign || "default"
   );
 
+  const lorebook = readJson(path, []);
+
+  if (lorebook.length === 0) {
+    return res.status(500).json({
+      success: false,
+      error:
+        "Lorebook empty. Update blocked."
+    });
+  }
+
+  backupLorebook(path);
+
   const index = lorebook.findIndex(
-    entry => entry.name === name
+    entry =>
+      String(entry.name)
+        .trim()
+        .toLowerCase() ===
+      String(name)
+        .trim()
+        .toLowerCase()
   );
 
   if (index === -1) {
-    const newEntry = {
-      name,
-      keys,
-      content
-    };
-
-    lorebook.push(newEntry);
-
-    writeJson(
-      getLorebookPath(campaign || "default"),
-      lorebook
-    );
-
-    return res.json({
-      success: true,
-      mode: "added",
-      entry: newEntry
+    return res.status(404).json({
+      success: false,
+      error:
+        "Entry not found. Use add-lore."
     });
   }
 
   lorebook[index] = {
     ...lorebook[index],
-    keys: keys || lorebook[index].keys,
-    content: content || lorebook[index].content
+    keys:
+      keys ?? lorebook[index].keys,
+    content:
+      content ??
+      lorebook[index].content
   };
 
-  writeJson(
-    getLorebookPath(campaign || "default"),
-    lorebook
-  );
+  writeJson(path, lorebook);
 
   res.json({
     success: true,
@@ -177,38 +201,51 @@ app.post("/update-lore", (req, res) => {
   });
 });
 
-/* ===== 관리자 페이지 ===== */
+/* ===== 관리자 ===== */
 
-app.get("/admin/lorebook/:campaign", (req, res) => {
-  const campaign = req.params.campaign;
+app.get(
+  "/admin/lorebook/:campaign",
+  (req, res) => {
+    const campaign =
+      req.params.campaign;
 
-  const lorebook = readJson(
-    getLorebookPath(campaign),
-    []
-  );
+    const lorebook = readJson(
+      getLorebookPath(campaign),
+      []
+    );
 
-  res.json({
-    campaign,
-    count: lorebook.length,
-    entries: lorebook
-  });
-});
+    res.json({
+      campaign,
+      count: lorebook.length,
+      entries: lorebook
+    });
+  }
+);
 
-app.get("/admin/state/:campaign", (req, res) => {
-  const campaign = req.params.campaign;
+app.get(
+  "/admin/state/:campaign",
+  (req, res) => {
+    const campaign =
+      req.params.campaign;
 
-  const states = readJson(
-    getStatePath(campaign),
-    []
-  );
+    const states = readJson(
+      getStatePath(campaign),
+      []
+    );
 
-  res.json({
-    campaign,
-    count: states.length,
-    states
-  });
-});
+    res.json({
+      campaign,
+      count: states.length,
+      states
+    });
+  }
+);
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("Lorebook API running");
-});
+app.listen(
+  process.env.PORT || 3000,
+  () => {
+    console.log(
+      "Lorebook API running"
+    );
+  }
+);
