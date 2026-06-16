@@ -1,243 +1,214 @@
 import express from "express";
 import cors from "cors";
-import fs from "fs";
+import { createClient } from "@supabase/supabase-js";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-function getLorebookPath(campaign) {
-  return `./lorebooks/${campaign}.json`;
-}
-
-function getStatePath(campaign) {
-  return `./lorebooks/${campaign}_state.json`;
-}
-
-function readJson(path, fallback) {
-  try {
-    if (!fs.existsSync(path)) return fallback;
-    return JSON.parse(fs.readFileSync(path, "utf8"));
-  } catch (err) {
-    console.error("JSON READ ERROR:", err);
-    return fallback;
-  }
-}
-
-function writeJson(path, data) {
-  fs.writeFileSync(
-    path,
-    JSON.stringify(data, null, 2),
-    "utf8"
-  );
-}
-
-function backupLorebook(path) {
-  try {
-    if (!fs.existsSync(path)) return;
-
-    fs.copyFileSync(
-      path,
-      `${path}.bak`
-    );
-
-    console.log("BACKUP CREATED:", `${path}.bak`);
-  } catch (err) {
-    console.error("BACKUP ERROR:", err);
-  }
-}
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
-    message: "Lorebook API is running"
+    message: "Lorebook API running with Supabase"
   });
 });
 
-app.post("/search-lore", (req, res) => {
-  const { campaign, query } = req.body;
+/* =========================
+   SEARCH LORE
+========================= */
 
-  const lorebook = readJson(
-    getLorebookPath(campaign || "default"),
-    []
-  );
+app.post("/search-lore", async (req, res) => {
+  try {
+    const { campaign, query } = req.body;
 
-  const q = (query || "").toLowerCase();
+    const { data, error } =
+      await supabase
+        .from("lorebook")
+        .select("*")
+        .eq("campaign", campaign);
 
-  const results = lorebook.filter(entry => {
-    const name = (entry.name || "").toLowerCase();
-    const content = (entry.content || "").toLowerCase();
-    const keys = entry.keys || [];
+    if (error) {
+      return res.status(500).json(error);
+    }
 
-    return (
-      name.includes(q) ||
-      content.includes(q) ||
-      keys.some(key => {
-        const k = String(key).toLowerCase();
-        return q.includes(k) || k.includes(q);
-      })
-    );
-  });
+    const q = (query || "").toLowerCase();
 
-  res.json({ results });
-});
+    const results = data.filter(entry => {
+      const name =
+        (entry.name || "").toLowerCase();
 
-app.post("/save-state", (req, res) => {
-  const { campaign, state } = req.body;
+      const content =
+        (entry.content || "").toLowerCase();
 
-  const states = readJson(
-    getStatePath(campaign || "default"),
-    []
-  );
+      const keys =
+        entry.keys || [];
 
-  const saved = {
-    time: new Date().toISOString(),
-    state
-  };
+      return (
+        name.includes(q) ||
+        content.includes(q) ||
+        keys.some(key =>
+          String(key)
+            .toLowerCase()
+            .includes(q)
+        )
+      );
+    });
 
-  states.push(saved);
-
-  writeJson(
-    getStatePath(campaign || "default"),
-    states
-  );
-
-  res.json({
-    success: true,
-    saved
-  });
-});
-
-app.post("/add-lore", (req, res) => {
-  const {
-    campaign,
-    name,
-    keys,
-    content
-  } = req.body;
-
-  const path = getLorebookPath(
-    campaign || "default"
-  );
-
-  const lorebook = readJson(path, []);
-
-  backupLorebook(path);
-
-  const newEntry = {
-    name,
-    keys,
-    content
-  };
-
-  lorebook.push(newEntry);
-
-  writeJson(path, lorebook);
-
-  res.json({
-    success: true,
-    added: newEntry
-  });
-});
-
-app.post("/update-lore", (req, res) => {
-  const {
-    campaign,
-    name,
-    keys,
-    content
-  } = req.body;
-
-  const path = getLorebookPath(
-    campaign || "default"
-  );
-
-  const lorebook = readJson(path, []);
-
-  if (lorebook.length === 0) {
-    return res.status(500).json({
-      success: false,
-      error:
-        "Lorebook empty. Update blocked."
+    res.json({ results });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
     });
   }
-
-  backupLorebook(path);
-
-  const index = lorebook.findIndex(
-    entry =>
-      String(entry.name)
-        .trim()
-        .toLowerCase() ===
-      String(name)
-        .trim()
-        .toLowerCase()
-  );
-
-  if (index === -1) {
-    return res.status(404).json({
-      success: false,
-      error:
-        "Entry not found. Use add-lore."
-    });
-  }
-
-  lorebook[index] = {
-    ...lorebook[index],
-    keys:
-      keys ?? lorebook[index].keys,
-    content:
-      content ??
-      lorebook[index].content
-  };
-
-  writeJson(path, lorebook);
-
-  res.json({
-    success: true,
-    mode: "updated",
-    entry: lorebook[index]
-  });
 });
 
-/* ===== 관리자 ===== */
+/* =========================
+   ADD LORE
+========================= */
+
+app.post("/add-lore", async (req, res) => {
+  try {
+    const {
+      campaign,
+      name,
+      keys,
+      content
+    } = req.body;
+
+    const { data, error } =
+      await supabase
+        .from("lorebook")
+        .insert([
+          {
+            campaign,
+            name,
+            keys,
+            content
+          }
+        ])
+        .select();
+
+    if (error) {
+      return res.status(500).json(error);
+    }
+
+    res.json({
+      success: true,
+      added: data[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
+    });
+  }
+});
+
+/* =========================
+   UPDATE LORE
+========================= */
+
+app.post("/update-lore", async (req, res) => {
+  try {
+    const {
+      campaign,
+      name,
+      keys,
+      content
+    } = req.body;
+
+    const { data: existing, error: findError } =
+      await supabase
+        .from("lorebook")
+        .select("*")
+        .eq("campaign", campaign)
+        .eq("name", name)
+        .limit(1);
+
+    if (findError) {
+      return res.status(500).json(findError);
+    }
+
+    if (!existing.length) {
+      return res.status(404).json({
+        success: false,
+        error:
+          "Entry not found. Use add-lore."
+      });
+    }
+
+    const updateData = {};
+
+    if (keys !== undefined)
+      updateData.keys = keys;
+
+    if (content !== undefined)
+      updateData.content = content;
+
+    const {
+      data,
+      error
+    } = await supabase
+      .from("lorebook")
+      .update(updateData)
+      .eq("campaign", campaign)
+      .eq("name", name)
+      .select();
+
+    if (error) {
+      return res.status(500).json(error);
+    }
+
+    res.json({
+      success: true,
+      mode: "updated",
+      entry: data[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
+    });
+  }
+});
+
+/* =========================
+   ADMIN LOREBOOK
+========================= */
 
 app.get(
   "/admin/lorebook/:campaign",
-  (req, res) => {
-    const campaign =
-      req.params.campaign;
+  async (req, res) => {
+    try {
+      const campaign =
+        req.params.campaign;
 
-    const lorebook = readJson(
-      getLorebookPath(campaign),
-      []
-    );
+      const { data, error } =
+        await supabase
+          .from("lorebook")
+          .select("*")
+          .eq("campaign", campaign);
 
-    res.json({
-      campaign,
-      count: lorebook.length,
-      entries: lorebook
-    });
-  }
-);
+      if (error) {
+        return res
+          .status(500)
+          .json(error);
+      }
 
-app.get(
-  "/admin/state/:campaign",
-  (req, res) => {
-    const campaign =
-      req.params.campaign;
-
-    const states = readJson(
-      getStatePath(campaign),
-      []
-    );
-
-    res.json({
-      campaign,
-      count: states.length,
-      states
-    });
+      res.json({
+        campaign,
+        count: data.length,
+        entries: data
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err.message
+      });
+    }
   }
 );
 
