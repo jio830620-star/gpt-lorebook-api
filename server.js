@@ -12,6 +12,10 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+/* ===========================
+   기본 상태 확인
+=========================== */
+
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
@@ -19,58 +23,51 @@ app.get("/", (req, res) => {
   });
 });
 
-/* =========================
-   SEARCH LORE
-========================= */
+/* ===========================
+   로어 검색
+=========================== */
 
 app.post("/search-lore", async (req, res) => {
   try {
     const { campaign, query } = req.body;
 
-    const { data, error } =
-      await supabase
-        .from("lorebook")
-        .select("*")
-        .eq("campaign", campaign);
+    const { data, error } = await supabase
+      .from("lorebook")
+      .select("*")
+      .eq("campaign", campaign);
 
-    if (error) {
-      return res.status(500).json(error);
-    }
+    if (error) throw error;
 
     const q = (query || "").toLowerCase();
 
     const results = data.filter(entry => {
-      const name =
-        (entry.name || "").toLowerCase();
-
-      const content =
-        (entry.content || "").toLowerCase();
-
-      const keys =
-        entry.keys || [];
+      const name = (entry.name || "").toLowerCase();
+      const content = (entry.content || "").toLowerCase();
+      const keys = entry.keys || [];
 
       return (
         name.includes(q) ||
         content.includes(q) ||
-        keys.some(key =>
-          String(key)
-            .toLowerCase()
-            .includes(q)
-        )
+        keys.some(key => {
+          const k = String(key).toLowerCase();
+          return q.includes(k) || k.includes(q);
+        })
       );
     });
 
     res.json({ results });
+
   } catch (err) {
     res.status(500).json({
+      success: false,
       error: err.message
     });
   }
 });
 
-/* =========================
-   ADD LORE
-========================= */
+/* ===========================
+   로어 추가
+=========================== */
 
 app.post("/add-lore", async (req, res) => {
   try {
@@ -81,37 +78,36 @@ app.post("/add-lore", async (req, res) => {
       content
     } = req.body;
 
-    const { data, error } =
-      await supabase
-        .from("lorebook")
-        .insert([
-          {
-            campaign,
-            name,
-            keys,
-            content
-          }
-        ])
-        .select();
+    const { data, error } = await supabase
+      .from("lorebook")
+      .insert([
+        {
+          campaign,
+          name,
+          keys,
+          content
+        }
+      ])
+      .select();
 
-    if (error) {
-      return res.status(500).json(error);
-    }
+    if (error) throw error;
 
     res.json({
       success: true,
       added: data[0]
     });
+
   } catch (err) {
     res.status(500).json({
+      success: false,
       error: err.message
     });
   }
 });
 
-/* =========================
-   UPDATE LORE
-========================= */
+/* ===========================
+   로어 수정
+=========================== */
 
 app.post("/update-lore", async (req, res) => {
   try {
@@ -122,63 +118,50 @@ app.post("/update-lore", async (req, res) => {
       content
     } = req.body;
 
-    const { data: existing, error: findError } =
-      await supabase
-        .from("lorebook")
-        .select("*")
-        .eq("campaign", campaign)
-        .eq("name", name)
-        .limit(1);
-
-    if (findError) {
-      return res.status(500).json(findError);
-    }
+    const { data: existing } = await supabase
+      .from("lorebook")
+      .select("*")
+      .eq("campaign", campaign)
+      .eq("name", name)
+      .limit(1);
 
     if (!existing.length) {
       return res.status(404).json({
         success: false,
-        error:
-          "Entry not found. Use add-lore."
+        error: "Entry not found"
       });
     }
 
-    const updateData = {};
-
-    if (keys !== undefined)
-      updateData.keys = keys;
-
-    if (content !== undefined)
-      updateData.content = content;
-
-    const {
-      data,
-      error
-    } = await supabase
+    const { data, error } = await supabase
       .from("lorebook")
-      .update(updateData)
+      .update({
+        keys:
+          keys ?? existing[0].keys,
+        content:
+          content ?? existing[0].content
+      })
       .eq("campaign", campaign)
       .eq("name", name)
       .select();
 
-    if (error) {
-      return res.status(500).json(error);
-    }
+    if (error) throw error;
 
     res.json({
       success: true,
-      mode: "updated",
       entry: data[0]
     });
+
   } catch (err) {
     res.status(500).json({
+      success: false,
       error: err.message
     });
   }
 });
 
-/* =========================
-   ADMIN LOREBOOK
-========================= */
+/* ===========================
+   캠페인 전체 출력
+=========================== */
 
 app.get(
   "/admin/lorebook/:campaign",
@@ -193,19 +176,88 @@ app.get(
           .select("*")
           .eq("campaign", campaign);
 
-      if (error) {
-        return res
-          .status(500)
-          .json(error);
-      }
+      if (error) throw error;
 
       res.json({
         campaign,
         count: data.length,
         entries: data
       });
+
     } catch (err) {
       res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
+  }
+);
+
+/* ===========================
+   세이브 저장
+=========================== */
+
+app.post("/save-state", async (req, res) => {
+  try {
+    const {
+      campaign,
+      state
+    } = req.body;
+
+    const { data, error } =
+      await supabase
+        .from("states")
+        .insert([
+          {
+            campaign,
+            state
+          }
+        ])
+        .select();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      saved: data[0]
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+/* ===========================
+   세이브 조회
+=========================== */
+
+app.get(
+  "/admin/state/:campaign",
+  async (req, res) => {
+    try {
+      const campaign =
+        req.params.campaign;
+
+      const { data, error } =
+        await supabase
+          .from("states")
+          .select("*")
+          .eq("campaign", campaign);
+
+      if (error) throw error;
+
+      res.json({
+        campaign,
+        count: data.length,
+        states: data
+      });
+
+    } catch (err) {
+      res.status(500).json({
+        success: false,
         error: err.message
       });
     }
